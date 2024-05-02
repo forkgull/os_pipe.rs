@@ -1,44 +1,32 @@
 use crate::PipeReader;
 use crate::PipeWriter;
-use libc::c_int;
+
 use std::fs::File;
 use std::io;
 use std::os::unix::prelude::*;
+
+use rustix::fd::OwnedFd;
+use rustix::pipe;
 
 // We need to atomically create pipes and set the CLOEXEC flag on them. This is
 // done with the pipe2() API. However, macOS doesn't support pipe2. There, all
 // we can do is call pipe() followed by fcntl(), and hope that no other threads
 // fork() in between. The following code is copied from the nix crate, where it
 // works but is deprecated.
-#[cfg(not(any(target_os = "aix", target_vendor = "apple", target_os = "haiku")))]
+#[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "haiku")))]
 fn pipe2_cloexec() -> io::Result<(OwnedFd, OwnedFd)> {
-    let mut fds: [c_int; 2] = [0; 2];
-    let res = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) };
-    if res != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    unsafe { Ok((OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1]))) }
+    let pipe = pipe::pipe_with(pipe::PipeFlags::CLOEXEC)?;
+    Ok(pipe)
 }
 
-#[cfg(any(target_os = "aix", target_vendor = "apple", target_os = "haiku"))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "haiku"))]
 fn pipe2_cloexec() -> io::Result<(OwnedFd, OwnedFd)> {
-    let mut fds: [c_int; 2] = [0; 2];
-    let res = unsafe { libc::pipe(fds.as_mut_ptr()) };
-    if res != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // Wrap the fds immediately, so that we'll drop them and close them in the unlikely event that
-    // any of the following fcntls fails.
-    let owned_fds = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
-    let res = unsafe { libc::fcntl(fds[0], libc::F_SETFD, libc::FD_CLOEXEC) };
-    if res != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let res = unsafe { libc::fcntl(fds[1], libc::F_SETFD, libc::FD_CLOEXEC) };
-    if res != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(owned_fds)
+    use rustix::io::{fcntl_setfd, FdFlags};
+
+    let (left, right) = pipe::pipe()?;
+    fcntl_setfd(&left, FdFlags::CLOEXEC)?;
+    fcntl_setfd(&right, FdFlags::CLOEXEC)?;
+    Ok((left, right))
 }
 
 pub(crate) fn pipe() -> io::Result<(PipeReader, PipeWriter)> {

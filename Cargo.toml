@@ -12,7 +12,7 @@ edition = "2021"
 rust-version = "1.63"
 
 [target.'cfg(not(windows))'.dependencies]
-libc = "0.2.62"
+rustix = { version = "1", default-features = false, features = ["pipe", "std"] }
 
 [target.'cfg(windows)'.dependencies]
 # `windows-sys` releases incompatible version updates frequently, but the APIs

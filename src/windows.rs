@@ -87,12 +87,6 @@ impl FromRawHandle for PipeWriter {
     }
 }
 
-impl From<PipeWriter> for OwnedHandle {
-    fn from(writer: PipeWriter) -> Self {
-        writer.0.into()
-    }
-}
-
 impl AsHandle for PipeWriter {
     fn as_handle(&self) -> BorrowedHandle<'_> {
         self.0.as_handle()
